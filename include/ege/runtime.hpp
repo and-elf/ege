@@ -17,9 +17,15 @@ struct Layer {
     virtual bool on_event(const Event &e) { (void)e; return false; }
     // update logic (dt seconds)
     virtual void on_update(float dt) { (void)dt; }
+    // called when runtime is shutting down; layers should release resources here
+    virtual void on_exit() noexcept { }
     // record render commands into given pipeline (producer side)
     virtual void on_render(ege::SPSCRenderPipeline<1024,4,8>& pipeline, int frame_count) { (void)pipeline; (void)frame_count; }
 };
+
+bool is_shutdown_event(const Event &e) {
+    return e.type == EventType::Input && e.id == uint32_t(InputCode::Quit);
+}
 
 // Simple runtime that drives backend, events and layers. Not thread-safe.
 struct Runtime {
@@ -39,11 +45,16 @@ struct Runtime {
             backend_.poll_input(events);
             backend_.drain_events(events);
 
-            // Dispatch events to layers (top-first); if consumed, stop propagation
+            // Dispatch events to layers (top-first); if consumed, stop propagation.
+            // If we receive a Quit input event, request runtime stop.
             for (const auto &ev : events) {
-                bool handled = false;
+                if (is_shutdown_event(ev)) {
+                    running_ = false;
+                    std::printf("Received shutdown event, stopping runtime...\n");
+                    break;
+                }
                 for (auto it = layers_.rbegin(); it != layers_.rend(); ++it) {
-                    if ((*it)->on_event(ev)) { handled = true; break; }
+                    if ((*it)->on_event(ev)) break;
                 }
                 (void)handled;
             }
@@ -69,6 +80,11 @@ struct Runtime {
 
             ++frame_count;
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+
+        // Runtime stopping: notify layers to clean up in reverse order.
+        for (auto it = layers_.rbegin(); it != layers_.rend(); ++it) {
+            (*it)->on_exit();
         }
     }
 
