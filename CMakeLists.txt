@@ -4,6 +4,30 @@ project(ege LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Common build options (inspired by cpp-best-practices/cmake_template)
+option(EGE_WERROR "Treat warnings as errors" ON)
+option(EGE_PEDANTIC_WARNINGS "Enable pedantic/extra warnings" ON)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  if(EGE_PEDANTIC_WARNINGS)
+    add_compile_options(
+      -Wall -Wextra -Wpedantic
+      -Wconversion -Wsign-conversion -Wshadow
+      -Wold-style-cast -Wnon-virtual-dtor -Wformat=2
+    )
+  endif()
+  if(EGE_WERROR)
+    add_compile_options(-Werror)
+  endif()
+elseif(MSVC)
+  if(EGE_PEDANTIC_WARNINGS)
+    add_compile_options(/W4 /permissive-)
+  endif()
+  if(EGE_WERROR)
+    add_compile_options(/WX)
+  endif()
+endif()
+
 option(EGE_BUILD_SDL "Build SDL backend and examples" ON)
 option(EGE_BUILD_ESP32 "Build ESP32 backend (toolchain required)" OFF)
 option(EGE_BUILD_TESTS "Build unit tests" ON)
