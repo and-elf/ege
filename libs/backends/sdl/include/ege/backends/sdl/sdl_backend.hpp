@@ -26,8 +26,8 @@ struct SDLBackend {
     // Input/audio bridging
     void poll_input(std::vector<ege::Event>& out);
     bool open_audio(int sample_rate = 44100);
-    // Trigger a simple synthesized sound (frequency in Hz, duration in seconds).
-    void trigger_sound(uint32_t sound_id, float frequency = 440.0f, float duration = 0.2f);
+    // Trigger a simple synthesized sound (frequency in Hz, duration in milliseconds).
+    void trigger_sound(uint32_t sound_id, float frequency = 440.0f, uint32_t duration_ms = 200);
     // Pull APIs for event queue
     bool try_pop_event(ege::Event &out);
     void drain_events(std::vector<ege::Event>& out);

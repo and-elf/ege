@@ -5,8 +5,16 @@
 #include <cstring>
 #include <cmath>
 #include <vector>
+#include <csignal>
 
 namespace ege::backend {
+
+namespace {
+static volatile std::sig_atomic_t s_sigint_flag = 0;
+void sdl_sigint_handler(int) {
+    s_sigint_flag = 1;
+}
+} // anonymous
 
 SDLBackend::SDLBackend() = default;
 SDLBackend::~SDLBackend() { shutdown(); }
@@ -20,6 +28,11 @@ bool SDLBackend::init(std::size_t width, std::size_t height) {
         std::cerr << "SDL_Init failed: " << SDL_GetError() << "\n";
         return false;
     }
+
+    // Install signal handlers so Ctrl-C (SIGINT) and SIGTERM enqueue a quit event.
+    // Use a simple sig_atomic_t flag which will be checked from the main loop.
+    std::signal(SIGINT, sdl_sigint_handler);
+    std::signal(SIGTERM, sdl_sigint_handler);
 
     window_ = SDL_CreateWindow("EGE", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                static_cast<int>(width_), static_cast<int>(height_), 0);
@@ -71,8 +84,8 @@ static inline void draw_filled_rect(std::vector<uint32_t> &pixels, std::size_t w
     int y1 = y0 + rh;
     x0 = std::max(0, x0);
     y0 = std::max(0, y0);
-    x1 = std::min((int)w, x1);
-    y1 = std::min((int)h, y1);
+    x1 = std::min(static_cast<int>(w), x1);
+    y1 = std::min(static_cast<int>(h), y1);
     for (int y = y0; y < y1; ++y) {
         uint32_t *row = pixels.data() + static_cast<std::size_t>(y) * w;
         for (int x = x0; x < x1; ++x) row[x] = color;
@@ -102,7 +115,7 @@ void SDLBackend::present(const ege::FrameBuffer<1024>& frame) {
     if (SDL_LockTexture(texture_, nullptr, &texPixels, &pitch) == 0) {
         // copy rows (pitch may be larger than width*4)
         for (std::size_t y = 0; y < height_; ++y) {
-            std::memcpy(static_cast<uint8_t*>(texPixels) + y * pitch,
+            std::memcpy(static_cast<uint8_t*>(texPixels) + y * static_cast<std::size_t>(pitch),
                         pixels_.data() + y * width_, width_ * sizeof(uint32_t));
         }
         SDL_UnlockTexture(texture_);
@@ -116,24 +129,57 @@ void SDLBackend::present(const ege::FrameBuffer<1024>& frame) {
 
 void SDLBackend::poll_input(std::vector<ege::Event>& out)
 {
+    // If a signal (SIGINT/SIGTERM) was received, enqueue a Quit input event.
+    if (s_sigint_flag) {
+        ege::Event se{};
+        se.type = ege::EventType::Input;
+        se.id = uint32_t(ege::InputCode::Quit);
+        se.payload.i = 1;
+        se.pos = {0,0};
+        (void)event_queue_.push(se);
+        s_sigint_flag = 0;
+    }
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
         ege::Event e{};
         switch (ev.type) {
         case SDL_QUIT:
-            e.type = ege::EventType::Input; e.id = uint32_t(ege::InputCode::Quit); e.payload.i = 1; e.pos.x = 0; e.pos.y = 0; break;
+            e.type = ege::EventType::Input;
+            e.id = uint32_t(ege::InputCode::Quit);
+            e.payload.i = 1; e.pos = {0, 0};
+            break;
+        case SDL_WINDOWEVENT:
+            if (ev.window.event == SDL_WINDOWEVENT_CLOSE) {
+                e.type = ege::EventType::Input;
+                e.id = uint32_t(ege::InputCode::Quit);
+                e.payload.i = 1;
+                e.pos = {0,0};
+            }
+            break;
         case SDL_KEYDOWN:
         case SDL_KEYUP:
-            e.type = ege::EventType::Input; e.id = uint32_t(ev.key.keysym.sym);
-            e.payload.i = (ev.type == SDL_KEYDOWN) ? 1 : 0; e.pos.x = 0; e.pos.y = 0; break;
+            e.type = ege::EventType::Input;
+            e.id = uint32_t(ev.key.keysym.sym);
+            e.payload.i = (ev.type == SDL_KEYDOWN) ? 1 : 0;
+            e.pos = {0, 0};
+            break;
         case SDL_MOUSEBUTTONDOWN:
         case SDL_MOUSEBUTTONUP:
-            e.type = ege::EventType::Input; e.id = uint32_t(ev.button.button);
+            e.type = ege::EventType::Input;
+            e.id = uint32_t(ev.button.button);
             e.payload.i = (ev.type == SDL_MOUSEBUTTONDOWN) ? 1 : 0;
-            e.pos.x = ev.button.x; e.pos.y = ev.button.y; break;
+            e.pos = {ev.button.x, ev.button.y};
+            break;
         case SDL_MOUSEMOTION:
-            e.type = ege::EventType::Input; e.id = 0; e.payload.i = 0;
-            e.pos.x = ev.motion.x; e.pos.y = ev.motion.y; break;
+            e.type = ege::EventType::Input; e.id = 0;
+            e.payload.i = 0;
+            e.pos = {ev.motion.x, ev.motion.y};
+            break;
+        case SDL_MOUSEWHEEL:
+            e.type = ege::EventType::Input; e.id = 0;
+            e.payload.i = 0;
+            e.pos = {ev.wheel.x, ev.wheel.y};
+            break;
         default:
             continue;
         }
@@ -175,28 +221,29 @@ bool SDLBackend::open_audio(int sample_rate)
     return true;
 }
 
-void SDLBackend::trigger_sound(uint32_t sound_id, float frequency, float duration)
+void SDLBackend::trigger_sound(uint32_t sound_id, float frequency, uint32_t duration_ms)
 {
     if (audio_dev_ == 0) {
         if (!open_audio(44100)) return;
     }
     const int rate = (audio_rate_ > 0) ? audio_rate_ : 44100;
-    const int samples = int(duration * rate);
-    if (samples <= 0) return;
+    const double duration_s = static_cast<double>(duration_ms) / 1000.0;
+    const size_t samples = static_cast<size_t>(std::ceil(duration_s * rate));
+    if (samples == 0) return;
     std::vector<float> buf;
     buf.resize(samples);
-    const double two_pi_f = 2.0 * M_PI * double(frequency);
-    for (int i = 0; i < samples; ++i) {
-        double t = double(i) / double(rate);
+    const double two_pi_f = 2.0 * M_PI * static_cast<double>(frequency);
+    for (size_t i = 0; i < samples; ++i) {
+        double t = static_cast<double>(i) / static_cast<double>(rate);
         float env = 1.0f;
         const double attack = 0.01;
         const double release = 0.05;
-        if (t < attack) env = float(t / attack);
-        else if (t > (duration - release)) env = float((duration - t) / release);
+        if (t < attack) env = static_cast<float>(t / attack);
+        else if (t > (duration_s - release)) env = static_cast<float>((duration_s - t) / release);
         if (env < 0.0f) env = 0.0f;
-        buf[i] = float(0.25f * env * std::sin(two_pi_f * t));
+        buf[i] = static_cast<float>(0.25f * env * std::sin(two_pi_f * t));
     }
-    SDL_QueueAudio(audio_dev_, buf.data(), int(buf.size() * sizeof(float)));
+    SDL_QueueAudio(audio_dev_, buf.data(), static_cast<Uint32>(buf.size() * sizeof(float)));
     (void)sound_id;
 }
 
