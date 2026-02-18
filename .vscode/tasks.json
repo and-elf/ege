@@ -1,0 +1,14 @@
+{
+    // Tasks for building the project before debugging
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build ege",
+            "type": "shell",
+            "command": "cmake --build build -- -j$(nproc)",
+            "group": { "kind": "build", "isDefault": true },
+            "presentation": { "reveal": "always", "panel": "shared" },
+            "problemMatcher": ["$gcc"]
+        }
+    ]
+}
