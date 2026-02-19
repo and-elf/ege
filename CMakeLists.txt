@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 project(ege LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Common build options (inspired by cpp-best-practices/cmake_template)
