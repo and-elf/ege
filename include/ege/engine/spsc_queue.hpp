@@ -23,9 +23,11 @@ public:
 
     [[nodiscard]] bool pop(T& out) noexcept {
         const std::size_t tail = tail_.load(std::memory_order_relaxed);
+        const std::size_t last = (tail + 1) & (Capacity - 1);
+
         if (tail == head_.load(std::memory_order_acquire)) return false; // empty
         out = buffer_[tail];
-        tail_.store((tail + 1) & (Capacity - 1), std::memory_order_release);
+        tail_.store(last, std::memory_order_release);
         return true;
     }
 

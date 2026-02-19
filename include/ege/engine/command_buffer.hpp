@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cassert>
 #include "render_command.hpp"
 
 namespace ege {
@@ -11,7 +12,8 @@ namespace ege {
 template<std::size_t Capacity>
 class MemoryCommandBuffer {
 public:
-    MemoryCommandBuffer() noexcept { reset(); }
+    MemoryCommandBuffer() noexcept : writable_(true) { reset(); }
+    explicit MemoryCommandBuffer(bool writable) noexcept : writable_(writable) { reset(); }
 
     void reset() noexcept { size_ = 0; }
 
@@ -21,6 +23,7 @@ public:
     // Push a rectangle command. Crashes if there's not enough room.
     void push_rect(uint8_t layer, uint32_t color, int16_t x, int16_t y, int16_t w, int16_t h) noexcept {
         // layout: opcode(1) | layer(1) | color(4) | x(2) | y(2) | w(2) | h(2)
+        assert(writable_ && "attempt to write to read-only command buffer");
         constexpr std::size_t needed = 1 + 1 + 4 + 2 + 2 + 2 + 2;
         assert(size_ + needed <= Capacity);
         uint8_t* ptr = &buf_[size_];
@@ -37,6 +40,7 @@ public:
     // Push a clear command. Crashes if there's not enough room.
     void push_clear(uint32_t color) noexcept {
         // opcode(1) | color(4)
+        assert(writable_ && "attempt to write to read-only command buffer");
         constexpr std::size_t needed = 1 + 4;
         assert(size_ + needed <= Capacity);
         uint8_t* ptr = &buf_[size_];
@@ -90,6 +94,7 @@ public:
 private:
     uint8_t buf_[Capacity];
     std::size_t size_ = 0;
+    bool writable_ = true;
 };
 
 } // namespace ege
