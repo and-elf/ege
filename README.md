@@ -13,7 +13,9 @@ This repository contains EGE, a small data-oriented embedded-friendly game engin
 - A type satisfies `LayerConcept` when it provides:
   - `bool on_event(const ege::Event&)` — return true if the event was consumed.
   - `void on_update(float dt)` — update step with delta-time in seconds.
-  - `void on_render(ege::SPSCRenderPipeline<1024,4,8>&, int frame_count)` — record render commands into the producer-side pipeline.
+  - `void on_render(int frame_count)` — record render commands. The runtime binds an active command-buffer
+    into the layer as a protected `cmdbuf_` pointer before calling `on_render`; layers should push commands
+    into `cmdbuf_` and must not call pipeline lifecycle methods directly.
 - See the example layer in [examples/sdl/main.cpp](examples/sdl/main.cpp) for a minimal usage pattern.
 
 **Runtime**
@@ -30,7 +32,7 @@ Key behaviors
 - Layers: add layers via the templated `push_layer(L* layer)` where `L` satisfies the `LayerConcept`. The runtime stores lightweight callable wrappers and invokes them in a deterministic order.
 - Event dispatch: each frame the runtime polls the backend for new `ege::Event`s and dispatches them to layers in reverse order (top-most layer first). If a layer returns `true` from `on_event`, the event is considered handled and propagation stops.
 - Update step: after event dispatch the runtime calls `on_update(dt)` for each layer in insertion order (bottom-to-top). `dt` is a fixed-step by default (1/60s) but can be adapted later.
-- Render: the runtime lets layers record render commands into the provided `SPSCRenderPipeline` (producer API). After submission, the runtime attempts to consume the latest completed buffer/frame and calls the backend's `present()`.
+- Render: the runtime acquires a writable command-buffer each frame, binds it to each visible layer as `cmdbuf_`, calls `on_render(frame_count)` for those layers, then submits the buffer. After submission the runtime consumes the latest completed frame and calls the backend's `present()`.
 - Stop: calling `Runtime::stop()` sets an internal flag and the main loop will exit cleanly at the next iteration.
 
 Example usage
@@ -51,10 +53,14 @@ int main() {
   struct MyLayer {
     bool on_event(const ege::Event &e) { return false; }
     void on_update(float dt) { (void)dt; }
-    void on_render(ege::SPSCRenderPipeline<1024,4,8>& p, int fc) {
-      auto &b = p.begin_frame();
-      b.push_clear(0xFF000000);
-      p.submit_frame();
+    void on_render(int fc) {
+      // Runtime binds a valid command buffer pointer to the layer as
+      // `cmdbuf_` before calling `on_render`. Layers should use the
+      // protected `cmdbuf_` pointer to push commands and not touch the
+      // pipeline directly.
+      (void)fc;
+      if (!cmdbuf_) return;
+      cmdbuf_->push_clear(0xFF000000);
     }
   } layer;
 
