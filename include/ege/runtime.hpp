@@ -7,6 +7,7 @@
 #include <ege/engine/render_pipeline.hpp>
 #include <ege/engine/event.hpp>
 #include <ege/backend.hpp>
+#include <ege/physics.hpp>
 
 namespace ege {
 
@@ -29,8 +30,8 @@ bool is_shutdown_event(const Event &e) {
 
 // Simple runtime that drives backend, events and layers. Not thread-safe.
 struct Runtime {
-    Runtime(backend::Backend& backend, ege::SPSCRenderPipeline<1024,4,8>& pipeline) noexcept
-        : backend_(backend), pipeline_(pipeline), running_(false) {}
+    Runtime(backend::Backend& backend, ege::SPSCRenderPipeline<1024,4,8>& pipeline, PhysicsSystem &physics) noexcept
+        : backend_(backend), pipeline_(pipeline), running_(false), physics_(physics) {}
 
     ~Runtime() = default;
 
@@ -56,17 +57,17 @@ struct Runtime {
                 for (auto it = layers_.rbegin(); it != layers_.rend(); ++it) {
                     if ((*it)->on_event(ev)) break;
                 }
-                (void)handled;
             }
 
-            // Update layers
+            // Update layers and physics (fixed step)
             const float dt = 1.0f / 60.0f;
             for (auto* l : layers_) l->on_update(dt);
+            physics_.step(dt);
 
-            // Render: producer records commands into pipeline
-            auto &buf = pipeline_.begin_frame();
+            // Render: producer records commands into pipeline. Layers are
+            // responsible for calling `begin_frame()` and `submit_frame()`
+            // on the pipeline when recording commands.
             for (auto* l : layers_) l->on_render(pipeline_, frame_count);
-            pipeline_.submit_frame();
 
             // Consumer: present latest frame if available
             uint32_t idx;
@@ -96,6 +97,7 @@ private:
 
     std::vector<Layer*> layers_;
     bool running_ = false;
+    PhysicsSystem& physics_;
 };
 
 } // namespace ege

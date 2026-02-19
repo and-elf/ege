@@ -35,6 +35,7 @@ option(EGE_COVERAGE "Enable code coverage instrumentation (for tests)" OFF)
 
 add_subdirectory(src/engine)
 add_subdirectory(libs/backends)
+add_subdirectory(libs/physics)
 add_subdirectory(examples)
 
 if(EGE_BUILD_TESTS)

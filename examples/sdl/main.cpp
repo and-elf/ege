@@ -27,12 +27,17 @@ int main() {
             auto &buf = pipeline.begin_frame();
             buf.push_clear(0xFF001144);
             int x = 10 + (frame % 100);
-            buf.push_rect(0, 0xFFFFAA00, x, 40, 50, 30);
+            buf.push_rect(0, 0xFFFFAA00,
+                         static_cast<int16_t>(x),
+                         static_cast<int16_t>(40),
+                         static_cast<int16_t>(50),
+                         static_cast<int16_t>(30));
             pipeline.submit_frame();
         }
     };
 
-    ege::Runtime rt(backend, pipeline);
+    ege::PhysicsSystem physics;
+    ege::Runtime rt(backend, pipeline, physics);
     ExampleLayer layer;
     rt.push_layer(&layer);
     rt.run();

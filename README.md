@@ -45,7 +45,8 @@ int main() {
   if (!backend.init(320,240)) return 1;
 
   ege::SPSCRenderPipeline<1024,4,8> pipeline;
-  ege::Runtime rt(backend, pipeline);
+  ege::PhysicsSystem physics;
+  ege::Runtime rt(backend, pipeline, physics);
 
   struct MyLayer {
     bool on_event(const ege::Event &e) { return false; }

@@ -13,6 +13,7 @@ add_executable(ege_unit_tests
 	allocator_test.cpp
 	render_pipeline_test.cpp
 	command_buffer_test.cpp
+    physics_test.cpp
 )
 
 target_link_libraries(ege_unit_tests PRIVATE ege_core GTest::gtest_main)
